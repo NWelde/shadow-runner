@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CI Shadow Runner — jsonb_accessor</title>
+<style>
+  :root{
+    --bg:#0b1020; --panel:#141a2e; --panel2:#1b2238; --ink:#e8ecf6; --muted:#9aa6c4;
+    --line:#26304d; --green:#22c55e; --red:#ef4444; --amber:#f59e0b;
+    --blue:#3b82f6; --accent:#7c93ff;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:linear-gradient(160deg,#0b1020,#0e1430 60%,#0b1020);
+    color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  .wrap{max-width:980px;margin:0 auto;padding:48px 24px 80px;}
+  .eyebrow{letter-spacing:.18em;text-transform:uppercase;font-size:12px;color:var(--accent);font-weight:700;}
+  h1{font-size:34px;margin:.2em 0 .1em;line-height:1.15;}
+  h2{font-size:22px;margin:2.2em 0 .6em;display:flex;align-items:center;gap:10px;}
+  .sub{color:var(--muted);font-size:17px;margin:.2em 0 0;}
+  .pill{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:700;}
+  .pill.ok{background:rgba(34,197,94,.15);color:#7ef0a6;border:1px solid rgba(34,197,94,.35);}
+  .pill.bad{background:rgba(239,68,68,.13);color:#ffa3a3;border:1px solid rgba(239,68,68,.35);}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:14px;}
+  @media(max-width:720px){.grid{grid-template-columns:1fr}}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:22px;}
+  .card h3{margin:0 0 4px;font-size:15px;color:var(--muted);font-weight:600;}
+  .big{font-size:40px;font-weight:800;letter-spacing:-.02em;}
+  .big.green{color:#7ef0a6}.big.red{color:#ffa3a3}.big.blue{color:#9db8ff}
+  .kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;margin:26px 0 8px;}
+  @media(max-width:720px){.kpis{grid-template-columns:1fr}}
+  .kpi{background:var(--panel2);border:1px solid var(--line);border-radius:16px;padding:20px;text-align:center;}
+  .kpi .n{font-size:38px;font-weight:800;letter-spacing:-.02em;}
+  .kpi .l{color:var(--muted);font-size:13px;margin-top:4px;}
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:15px;}
+  th,td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line);}
+  th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em;}
+  td.num{font-variant-numeric:tabular-nums;font-weight:700;}
+  .row-prop{background:rgba(124,147,255,.07);}
+  .bar{height:30px;border-radius:7px;display:flex;align-items:center;padding:0 12px;color:#04122a;font-weight:800;font-size:13px;white-space:nowrap;}
+  .bar.base{background:linear-gradient(90deg,#64748b,#94a3b8);}
+  .bar.prop{background:linear-gradient(90deg,#22c55e,#4ade80);}
+  .barwrap{display:grid;grid-template-columns:120px 1fr;gap:14px;align-items:center;margin:10px 0;}
+  .barwrap .lab{color:var(--muted);font-size:14px;}
+  .timeline{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:12px;padding:18px 18px 26px;margin-top:8px;}
+  .seg{height:26px;border-radius:6px;position:absolute;top:0;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#04122a;overflow:hidden;}
+  .tl-row{position:relative;height:26px;margin:10px 0;}
+  .tl-row .name{position:absolute;left:-0;top:-20px;font-size:12px;color:var(--muted);}
+  .lint{background:linear-gradient(90deg,#f59e0b,#fbbf24);}
+  .test{background:linear-gradient(90deg,#3b82f6,#60a5fa);}
+  .note{color:var(--muted);font-size:13px;margin-top:8px;}
+  a{color:var(--accent);text-decoration:none;} a:hover{text-decoration:underline;}
+  .evidence{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
+  .evidence a{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 12px;font-size:13px;}
+  .cta{margin-top:18px;display:inline-block;background:linear-gradient(90deg,#5b6cff,#7c93ff);color:#fff;
+    padding:13px 22px;border-radius:12px;font-weight:700;font-size:15px;}
+  code{background:#0c1226;border:1px solid var(--line);border-radius:6px;padding:2px 7px;font-size:13px;color:#cdd7f5;}
+  .foot{margin-top:46px;color:var(--muted);font-size:12.5px;border-top:1px solid var(--line);padding-top:18px;}
+  .diff{background:#0c1226;border:1px solid var(--line);border-radius:12px;padding:16px 18px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:14px;}
+  .diff .del{color:#ffa3a3;} .diff .ctx{color:#8aa0c8;}
+  .tag{font-size:12px;color:var(--muted);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="eyebrow">CI Shadow Runner · Measured on real GitHub Actions</div>
+  <h1>One line is hiding your test suite<br>and slowing every CI run.</h1>
+  <p class="sub">Repository: <strong>madeintandem/jsonb_accessor</strong> &nbsp;·&nbsp; A single
+  <code>needs: lint</code> edge in <code>.github/workflows/ci.yml</code>. We didn't estimate —
+  we forked the repo and ran it both ways.</p>
+
+  <div class="kpis">
+    <div class="kpi"><div class="n" style="color:#ffa3a3">186 → 0</div><div class="l">test jobs that run when lint hits any nit (today)</div></div>
+    <div class="kpi"><div class="n" style="color:#7ef0a6">185 / 186</div><div class="l">tests that run &amp; pass once the edge is removed</div></div>
+    <div class="kpi"><div class="n" style="color:#9db8ff">~13%</div><div class="l">faster pipeline, fully green (89s → 77s)</div></div>
+  </div>
+
+  <!-- CORRECTNESS -->
+  <h2>🛡️ Correctness — the test suite is silently skipped</h2>
+  <p class="sub" style="font-size:15px">Because <code>tests</code> declares <code>needs: lint</code>, GitHub
+  runs the 186-variant test matrix <em>only if</em> RuboCop passes. We introduced one trivial,
+  autocorrectable style nit — the kind that lands in everyday PRs — and ran the full matrix both ways:</p>
+
+  <div class="grid">
+    <div class="card">
+      <h3>TODAY — <code>needs: lint</code> present</h3>
+      <div class="big red">0 / 186</div>
+      <div class="tag">test jobs ran</div>
+      <p style="margin:.8em 0 0"><span class="pill bad">lint ✗ failed</span>
+      &nbsp;<span class="pill bad">all 186 tests SKIPPED</span></p>
+      <p class="note">A contributor learns their formatting is off — and nothing about whether their code actually works.</p>
+    </div>
+    <div class="card row-prop">
+      <h3>PROPOSED — edge removed</h3>
+      <div class="big green">185 / 186</div>
+      <div class="tag">test jobs ran &amp; passed</div>
+      <p style="margin:.8em 0 0"><span class="pill bad">lint ✗ failed</span>
+      &nbsp;<span class="pill ok">tests ✓ ran &amp; passed</span></p>
+      <p class="note">Lint and tests now report independently. (1 unrelated pre-existing flaky leg.)</p>
+    </div>
+  </div>
+  <div class="evidence">
+    <a href="https://github.com/NWelde/jsonb_accessor/actions/runs/26718093945" target="_blank">▶ Evidence run — today (0 tests ran)</a>
+    <a href="https://github.com/NWelde/jsonb_accessor/actions/runs/26718096701" target="_blank">▶ Evidence run — proposed (185 passed)</a>
+  </div>
+
+  <!-- SPEED -->
+  <h2>⚡ Speed — every run waits on lint for nothing</h2>
+  <p class="sub" style="font-size:15px">Measured on an identical, <strong>fully green</strong> pipeline (representative subset,
+  the only difference is the one line). Tests no longer wait for lint to finish:</p>
+
+  <div class="barwrap"><div class="lab">Today</div>
+    <div class="bar base" style="width:100%">89s &nbsp;— tests wait 18s for lint, then run</div></div>
+  <div class="barwrap"><div class="lab">Proposed</div>
+    <div class="bar prop" style="width:86.5%">77s &nbsp;— tests start at 3s, in parallel</div></div>
+  <p class="note">~13% faster here; the saving equals the lint job removed from the critical path —
+  ~15s on a warm cache, ~37s cold — on <em>every</em> run.</p>
+
+  <h3 style="color:var(--muted);font-size:14px;margin:24px 0 6px">When each job starts (lower is better)</h3>
+  <div class="timeline">
+    <div style="margin-bottom:26px">
+      <div class="tag" style="color:#9aa6c4">TODAY (needs: lint)</div>
+      <div class="tl-row"><span class="name">lint</span><div class="seg lint" style="left:0%;width:13%">lint</div></div>
+      <div class="tl-row"><span class="name">tests (wait ➜ start 18s)</span><div class="seg test" style="left:20%;width:80%">186 test jobs</div></div>
+    </div>
+    <div>
+      <div class="tag" style="color:#9aa6c4">PROPOSED (no needs)</div>
+      <div class="tl-row"><span class="name">lint</span><div class="seg lint" style="left:0%;width:13%">lint</div></div>
+      <div class="tl-row"><span class="name">tests (start 3s)</span><div class="seg test" style="left:3%;width:85%">186 test jobs</div></div>
+    </div>
+  </div>
+  <div class="evidence">
+    <a href="https://github.com/NWelde/jsonb_accessor/actions/runs/26718644075" target="_blank">▶ Clean run — today (89s, green)</a>
+    <a href="https://github.com/NWelde/jsonb_accessor/actions/runs/26718645670" target="_blank">▶ Clean run — proposed (77s, green)</a>
+  </div>
+
+  <!-- THE FIX -->
+  <h2>🔧 The fix — one line</h2>
+  <div class="diff">
+    <span class="ctx">&nbsp;&nbsp;tests:</span><br>
+    <span class="del">-&nbsp;&nbsp;&nbsp;&nbsp;needs: lint</span><br>
+    <span class="ctx">&nbsp;&nbsp;&nbsp;&nbsp;runs-on: ubuntu-24.04</span><br>
+    <span class="ctx">&nbsp;&nbsp;&nbsp;&nbsp;strategy:</span>
+  </div>
+  <p class="note">Safe: each test job re-checks out the repo and installs its own dependencies — it uses
+  no artifact, env var, or service produced by <code>lint</code>. Lint still runs and still reports pass/fail.</p>
+  <a class="cta" href="https://github.com/madeintandem/jsonb_accessor/pull/187" target="_blank">View the open pull request → #187</a>
+
+  <div class="foot">
+    <strong>Methodology.</strong> Produced by CI Shadow Runner: it ingests a repo's GitHub Actions history,
+    builds a duration-weighted dependency graph, finds the removable edge, then runs the experiment on real
+    infrastructure before proposing anything. All four runs above are public and verifiable on a throwaway
+    fork (<code>NWelde/jsonb_accessor</code>). Correctness was tested on the full 186-variant matrix; the speed
+    figure used a representative subset so both runs are green and the only variable is the one line — the
+    saving (lint removed from the critical path) is independent of matrix size. Every number came from a run
+    that actually happened.
+  </div>
+
+</div>
+</body>
+</html>

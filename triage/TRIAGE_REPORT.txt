@@ -1,0 +1,149 @@
+================================================================================
+TRIAGE FUNCTION TEST REPORT
+Repo under test: psf/requests (GitHub repo id 1362490)
+Pipeline exercised: GitHub REST -> Pydantic models -> SQLite -> read back -> triage
+Date: 2026-05-31
+================================================================================
+
+--------------------------------------------------------------------------------
+0. TL;DR
+--------------------------------------------------------------------------------
+Ran the triage layer against a real repo end-to-end. The individual signal
+functions were fine in isolation, but build_triage_input produced misleading
+output on a real multi-workflow, matrixed repo. Found and fixed 4 bugs:
+
+  #1  Only the first workflow (workflows[0]) was ever analysed.
+  #2  YAML job-ids never joined to run job-names (matrix/custom names).
+  #3  Failure rate was hard-wired to 0% (checked status, not conclusion).
+  #4  (surfaced by #1) Workflows sharing a job id cross-contaminated timings,
+      because runs were not linked to their workflow.
+
+After the fix, headline critical path = run-tests.yml -> build @ 269s (was
+wrongly lint @ 13s), and a real failure is correctly reported: the `action`
+job in lock-issues.yml at 9.1% (1 of 11 runs). 17/17 tests pass, ruff clean.
+
+--------------------------------------------------------------------------------
+1. TEST SETUP
+--------------------------------------------------------------------------------
+Two repos already in data/shadow.db were unusable for an end-to-end test:
+  - torvalds/linux        : 3 runs but 0 workflows -> build_triage_input raises
+                            "profile has no workflows to analyse"
+  - NWelde/better-auth    : 6 workflows but 0 runs  -> all durations empty
+
+So a fresh live ingest of psf/requests was performed (8 workflows, 30 runs,
+45 jobs). A real GITHUB_TOKEN from .env was used.
+
+--------------------------------------------------------------------------------
+2. WHAT THE FIRST (PRE-FIX) RUN RETURNED
+--------------------------------------------------------------------------------
+  dep_graph:                {"lint": []}
+  critical_path:            ["lint"]
+  critical_path_duration_s: 13.0
+  failure_rates:            {"lint": 0.0}
+  avg_durations:            31 jobs, e.g. build (3.14t, windows-latest) = 269s
+
+The headline critical path (13s) was ~20x too low. The true cost (the build
+matrix, up to 269s) was present in avg_durations but ignored by the dep graph,
+critical path, and failure rates.
+
+--------------------------------------------------------------------------------
+3. ROOT CAUSES
+--------------------------------------------------------------------------------
+BUG #1 -- single-workflow assumption
+  build_triage_input analysed only profile.workflows[0], which happened to be
+  lint.yml (a trivial single-job workflow). The real CI cost lives in
+  run-tests.yml (build matrix) and typecheck.yml.
+
+BUG #2 -- YAML job-id vs run job-name mismatch
+  dep_graph keys are YAML job *ids* (build, no_chardet, urllib3, typecheck).
+  durations/failure-rates key on run job *names*:
+      build (3.14t, windows-latest), No Character Detection, typecheck (3.10),
+      Analyze, ...
+  These never match for matrixed jobs or jobs with a custom `name:`. So even
+  pointed at the right workflow, chain_of_deps did durations.get("build") -> miss
+  -> 0s, collapsing duration-weighting to zero for every matrix job.
+
+BUG #3 -- failure rate can never detect a failure
+  read_failure_rate checked job.status == "failure". status only ever holds
+  GitHub's lifecycle value (queued/in_progress/completed) -- all 45 jobs were
+  "completed". Failure lives in the *conclusion* field
+  (success/failure/cancelled), which the Job model did not even store.
+
+BUG #4 -- cross-workflow contamination (surfaced while fixing #1)
+  Analysing all workflows revealed that psf/requests has two workflows that both
+  define a job id `build` (publish.yml and run-tests.yml). Durations were pooled
+  repo-wide, so publish.yml's build inherited run-tests.yml's 269s matrix. There
+  was no link from a Run back to its Workflow.
+
+--------------------------------------------------------------------------------
+4. FIXES (across all four layers)
+--------------------------------------------------------------------------------
+Fix #3 -- capture and use conclusion:
+  - ingest/github.py  : fetch_job_timing now returns `conclusion`
+  - models/__init__   : Job gains `conclusion: str = ""`
+  - pipeline.py       : populates conclusion
+  - store.py          : new `conclusion` column + idempotent migration (ALTER
+                        TABLE for pre-existing DBs)
+  - triage            : read_failure_rate keys on job.conclusion == "failure";
+                        also accepts a set of names so a matrix job pools its legs
+
+Fix #2 -- reconcile YAML job-id <-> run job-name:
+  - triage : new match_job_id / _workflow_job_names / names_by_job_id.
+             Matches, in order: id exactly, id as matrix prefix "id (",
+             static `name:` exactly, that name as a matrix prefix.
+             Matrix legs collapse onto their parent id, using MAX of the legs
+             for duration (parallel legs; a downstream `needs:` waits for the
+             slowest leg, so the node's wall-clock = slowest leg).
+
+Fix #1 -- analyse every workflow:
+  - triage : build_triage_input now analyses all workflows and returns the one
+             with the heaviest duration-weighted critical path, tagged with
+             `critical_path_workflow`.
+
+Fix #4 -- link runs to workflows (no extra API calls):
+  - The runs payload carries `path` and Workflow.id == crc32(path), so:
+  - models   : Run gains `workflow_id: int = 0`
+  - pipeline : Run.workflow_id = crc32(run["path"])
+  - store    : new `workflow_id` column on runs + migration; write/read
+  - triage   : each workflow's durations/failure-rates are scoped to its own
+               runs (Run.workflow_id == Workflow.id)
+
+--------------------------------------------------------------------------------
+5. VERIFIED RESULTS AFTER FIX (psf/requests)
+--------------------------------------------------------------------------------
+HEADLINE (heaviest workflow) build_triage_input(...):
+  critical_path_workflow:   "run-tests.yml"
+  dep_graph:                {"build": [], "no_chardet": [], "urllib3": []}
+  avg_durations:            {"build": 269.0, "no_chardet": 104.0, "urllib3": 101.0}
+  failure_rates:            {"build": 0.0, "no_chardet": 0.0, "urllib3": 0.0}
+  critical_path:            ["build"]
+  critical_path_duration_s: 269.0
+
+PER-WORKFLOW CRITICAL PATHS:
+  lint.yml                    13.0s  path=['lint']
+  publish.yml                  0.0s  path=['build', 'publish']   (no contamination)
+  close-issues.yml             0.0s  path=['close_qa']
+  zizmor.yml                   0.0s  path=['zizmor']
+  run-tests.yml              269.0s  path=['build']
+  codeql-analysis.yml         60.0s  path=['analyze']
+  lock-issues.yml              5.6s  path=['action']
+  typecheck.yml               18.0s  path=['typecheck']
+
+FAILURE DETECTION (fix #3 verified):
+  conclusion values now stored : {'success': 44, 'failure': 1}
+  failing job                  : 'action' in lock-issues.yml
+  lock-issues.yml failure_rate : {'action': 9.09%}  (1 of 11 runs)
+
+CHECKS:
+  uv run ruff check src    -> All checks passed
+  uv run pytest            -> 17 passed
+
+--------------------------------------------------------------------------------
+6. KNOWN REMAINING LIMITATION
+--------------------------------------------------------------------------------
+Job display names built from matrix *expressions* (e.g. name: build-${{ matrix.os }})
+cannot be resolved back to their job id without evaluating the template.
+match_job_id documents this and falls back to the job id. There are currently no
+unit tests for the triage layer (matrix collapse, conclusion-based failure rate,
+workflow scoping) -- recommended as a follow-up.
+================================================================================
