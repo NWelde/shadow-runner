@@ -9,9 +9,7 @@ It doesn't say "this should be faster." It says "we ran it, and it *was*
 faster, by this many seconds" — then writes a report and a ready-to-paste PR
 body with the evidence.
 
-See [`HOW_IT_WORKS/`](HOW_IT_WORKS/00_overview.md) for a full walkthrough of
-the pipeline (ingest → triage → shadow → pitch), or
-[`outputs/madeintandem_jsonb_accessor_pr.md`](outputs/madeintandem_jsonb_accessor_pr.md)
+See [`outputs/madeintandem_jsonb_accessor_pr.md`](outputs/madeintandem_jsonb_accessor_pr.md)
 for a real example: removing an unnecessary `needs: lint` dependency that was
 silently skipping 186 test jobs whenever lint failed.
 
