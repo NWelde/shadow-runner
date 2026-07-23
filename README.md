@@ -1,7 +1,36 @@
-# shadow-runner
+# CI Shadow Runner
 
-A synchronous GitHub REST API ingestion layer for CI data — workflow
-definitions, run history, per-job timing, and job logs.
+CI Shadow Runner reads a project's GitHub Actions history, finds jobs that
+are waiting on each other for no real reason, and proves a fix works by
+actually running both versions on real infrastructure and measuring the
+difference — before ever proposing a change.
+
+It doesn't say "this should be faster." It says "we ran it, and it *was*
+faster, by this many seconds" — then writes a report and a ready-to-paste PR
+body with the evidence.
+
+See [`HOW_IT_WORKS/`](HOW_IT_WORKS/00_overview.md) for a full walkthrough of
+the pipeline (ingest → triage → shadow → pitch), or
+[`outputs/madeintandem_jsonb_accessor_pr.md`](outputs/madeintandem_jsonb_accessor_pr.md)
+for a real example: removing an unnecessary `needs: lint` dependency that was
+silently skipping 186 test jobs whenever lint failed.
+
+## Pipeline
+
+```
+  1. INGEST          2. TRIAGE            3. SHADOW             4. PITCH
+  Read CI config  →  Find slow &      →   Run old vs new    →   Write report
+  + run history       unnecessary          for real, measure     + PR body
+  from GitHub          waits                the speedup
+```
+
+| Stage | Module |
+|---|---|
+| Ingest | `src/ingest/github.py` — synchronous GitHub REST client |
+| Model / persist | `src/pipeline.py`, `src/models/`, `src/store.py` — raw dicts → Pydantic models → SQLite |
+| Triage | `src/triage/` — dependency graph, critical path, failure rate |
+| Shadow | `src/shadow/` — proposes a change and runs both versions to measure it |
+| Pitch | `src/pitch/` — writes the human-readable report and PR body |
 
 ## Setup
 
@@ -21,6 +50,17 @@ GITHUB_TOKEN=ghp_your_real_token
 
 ## Usage
 
+Four subcommands mirror the pipeline stages:
+
+```bash
+uv run python cli.py ingest --repo django/django
+uv run python cli.py triage --repo django/django
+uv run python cli.py shadow --repo django/django --dry-run
+uv run python cli.py pitch  --repo django/django
+```
+
+Or use the ingest layer directly:
+
 ```python
 from ingest import github
 
@@ -28,7 +68,7 @@ profile = github.fetch_repo_ci_profile("octocat", "hello-world")
 # {"workflows": [...], "runs": [...]}  # each run has a "jobs" list
 ```
 
-### Functions
+### Ingest functions
 
 | Function | Endpoint |
 |---|---|
@@ -41,16 +81,12 @@ profile = github.fetch_repo_ci_profile("octocat", "hello-world")
 Non-200 responses raise `GitHubAPIError` (carrying `.status_code`); `403`/`429`
 raise `RateLimitError` with a wait hint pulled from the rate-limit headers.
 
-## Quick check
-
-Runs against a real repo (set `GITHUB_TOKEN` first):
-
-```bash
-uv run python src/ingest/github.py
-```
-
 ## Tests
 
 ```bash
 uv run pytest
 ```
+
+## License
+
+[MIT](LICENSE)

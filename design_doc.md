@@ -1,37 +1,40 @@
-# Model 
-----
+# Model reference
 
-## Job:
-    - id 
-    - name of each job 
-    - status of the job 
-    - conclusion- its different from status cause status tells us where in the lifecycle the job is is it currently running in progress or not 
-        - a conclusion is what happenes after the job finsihes sucess failure skipped or cancled 
-    - started_at - what time the job started in seconds 
-    - duration_s - How long it took the job to finish in seconds 
+Quick reference for the Pydantic models in `src/models/__init__.py`. See
+`CLAUDE.md` for how they fit into the pipeline.
+
+## Job
+
+- `id` — GitHub's job id
+- `name` — job name
+- `status` — lifecycle state (`queued` / `in_progress` / `completed`)
+- `conclusion` — outcome once finished (`success` / `failure` / `skipped` /
+  `cancelled`); distinct from `status`, which only tracks *where* the job is
+  in its lifecycle
+- `started_at` — start time
+- `duration_s` — how long the job took, in seconds
 
 ## Run
-    - id 
-    - gh_run_id - im assuming github doesn't have its own run id, so we assign it one 
-    - workflow-id - The id of the workflow 
-    - created at: a string that tells us when the run was created 
-    - job - a list of all [Jobs]
 
-## Workflow:
-    - id
-    - filename 
-    - raw_yaml
+- `id` — internal primary key
+- `gh_run_id` — GitHub's run id (kept separate since GitHub's id and our
+  storage id aren't guaranteed to be interchangeable everywhere)
+- `workflow_id` — id of the parent `Workflow`
+- `created_at` — when the run was created
+- `jobs` — list of `Job`
 
-## RepoProfile:
-    - id  
-    - owner
-    - name of repo 
-    - workflow : list[Workflow]
-    - runs: List[Run]
-        - if I wanted to acess anything within repo Profile i would do profile.runs[0].jobs[0] this would give me the first job 
+## Workflow
 
+- `id` — synthesized as `crc32(path)` (the contents API gives no integer id)
+- `filename`
+- `raw_yaml`
 
+## RepoProfile
 
+- `id`
+- `owner`
+- `name`
+- `workflows: list[Workflow]`
+- `runs: list[Run]`
 
-
- 
+Access pattern: `profile.runs[0].jobs[0]` gets the first job of the first run.

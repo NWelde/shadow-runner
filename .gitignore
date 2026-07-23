@@ -15,3 +15,10 @@ wheels/
 # Pytest / tooling caches
 .pytest_cache/
 .ruff_cache/
+
+# Claude Code local session state
+.claude/
+
+# Generated / local data
+data/*.db
+data/*.db-journal
